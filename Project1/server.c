@@ -35,6 +35,7 @@ int main(int argc, char *argv[])
   server_addr.sin_addr.s_addr = INADDR_ANY;
 
   // Bind the socket to the address
+  setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)); //reuse the port (prevents "Address already in use" error)
   if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) 
   {
     perror("bind");
