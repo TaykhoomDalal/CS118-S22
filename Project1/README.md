@@ -21,6 +21,19 @@ You are encouraged to host your code in private repositories on [GitHub](https:/
 
 `server.c` is the entry points for the server part of the project.
 
+## Basic Testing
+
+Compile and start the server:
+
+1. $ `gcc server.c -o server`
+2. $ `./server`
+
+Start the client and request a file:
+
+1. Open your webbrowser of choice
+2. Type in the following: http://localhost:15635/[insert_file_name]
+3. Press enter
+
 ## TODO
 
     ###########################################################
