@@ -49,12 +49,80 @@ char* parse_request(char *request) {
           char* fname = malloc(i + 1);
           strncpy(fname, start, i);
           fname[i] = '\0'; // terminate the string
-          fname = replace_http_space(fname); // replace any "%20" with a space
-          return fname; // return the file name
+          char* fname_replaced = replace_http_space(fname); // replace any "%20" with a space
+          free(fname);
+          return fname_replaced; // return the file name
       }
   }
 
   return NULL; // if no file name is found
+}
+
+void send_response(int client_fd, char* filename) {
+
+  char* headers = malloc(MESSAGE_SIZE);
+  memset(headers, '\0', MESSAGE_SIZE);
+  strcpy(headers, "HTTP/1.1 200 OK\r\n");
+
+  char* content_type;
+
+  if (strstr(filename, ".") == NULL){
+    content_type = "Content-Type: application/octet-stream\r\n";
+  }
+  else if(strstr(filename, ".html") != NULL) {
+    content_type = "Content-Type: text/html\r\n";
+  }
+  else if(strstr(filename, ".txt") != NULL) {
+    content_type = "Content-Type: text/plain\r\n";
+  }
+  else if(strstr(filename, ".jpg") != NULL) {
+    content_type = "Content-Type: image/jpeg\r\n";
+  }
+  else if(strstr(filename, ".png") != NULL) {
+    content_type = "Content-Type: image/png\r\n";
+  }
+  else if(strstr(filename, ".gif") != NULL) {
+    content_type = "Content-Type: image/gif\r\n";
+  }
+
+  strcat(headers, content_type);
+  strcat(headers, "Connection: close\r\n");
+  strcat(headers, "\r\n");
+
+  int nbytes;
+  if((nbytes = send(client_fd, headers, strlen(headers), 0)) == -1) {
+    perror("send");
+    exit(-1);
+  }
+
+  free(headers);
+
+  FILE* fd = fopen(filename, "r");
+  if(fd == NULL) {
+    perror("fopen");
+    exit(-1);
+  }
+
+  // find the size of the file
+  fseek(fd, 0, SEEK_END);
+  int file_size = ftell(fd);
+  fseek(fd, 0, SEEK_SET);
+
+  // allocate memory for the file
+  char* buffer = malloc(file_size);
+  memset(buffer, '\0', file_size);
+
+  // read the file into the buffer
+  int bytes_read = fread(buffer, 1, file_size, fd);
+
+  // send the file
+  if((nbytes = send(client_fd, buffer, bytes_read, 0)) == -1) {
+    perror("send");
+    exit(-1);
+  }
+
+  fclose(fd);
+  free(buffer);
 }
 
 int main(int argc, char *argv[])
@@ -111,23 +179,24 @@ int main(int argc, char *argv[])
       exit(-1);
     }
     
-    printf("Server: received %d bytes\n", nbytes);
-    printf("Server: received the following message\n%s", buffer);
+    printf("Server: received %d bytes\n", nbytes); //debugging
+    printf("Server: received the following message\n%s", buffer); //debugging
 
     filename = parse_request(buffer);
 
     if (filename == NULL) //should I exit here or continue waiting?
     {
-      printf("Server: no file name found\n");
+      printf("Server: no file name found\n"); //debugging
       continue;
     }
 
-    printf("Server: parsed filename: %s\n", filename);
+    printf("Server: parsed filename: %s\n", filename); //debugging
+
+    send_response(new_fd, filename);
 
     close(new_fd);
-    break;
+    free(filename);
   }
   close(sockfd);
-  free(filename);
   return 0;
 }
