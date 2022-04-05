@@ -1,7 +1,7 @@
 /* PLEASE include these headers */
 #include <stdio.h> // for printf
 #include <stdlib.h> // for exit()
-#include <string.h>
+#include <string.h> // for strlen() and strcpy()
 #include <errno.h> // for errno and perror
 #include <sys/types.h> // for socket(), bind(), and accept()
 #include <sys/socket.h> // socket(), bind(), listen(), accept()
@@ -14,20 +14,47 @@
 #define BACKLOG 10 /* pending connections queue size */
 #define MESSAGE_SIZE 1024
 
+char* replace_http_space(char* str) {
+  char* res = malloc(strlen(str) + 1); // allocate memory for the new string
+  memset(res, '\0', strlen(str) + 1); // set the new string to null
+
+  char* temp;
+  int index = 0;
+  for(;;) // loop until the end of the string
+  {
+      temp = strstr(str, "%20"); // find the first occurrence of "%20"
+      if(temp == NULL) // if no more "%20" is found
+      {
+          strcpy(res + index, str); // copy the rest of the string
+          return res; // return the new string
+      }
+      else // if "%20" is found
+      {
+          strncpy(res + index, str, temp - str); // copy the string before the "%20"
+          index += temp - str; // update the index
+          str = temp + 3; // update the string
+          res[index] = ' '; // replace the "%20" with a space
+          index += 1; // update the index
+      }
+  }
+
+  return res;
+}
+
 char* parse_request(char *request) {
+  char* start = strchr(request, '/') + 1; // find the first '/', and then skip the '/'
 
-    char* start = strchr(request, '/') + 1; // find the first '/', and then skip the '/'
+  for(int i = 0; i < strlen(start); i++) {
+      if(start[i] == ' ') { // find the space after the file name
+          char* fname = malloc(i + 1);
+          strncpy(fname, start, i);
+          fname[i] = '\0'; // terminate the string
+          fname = replace_http_space(fname); // replace any "%20" with a space
+          return fname; // return the file name
+      }
+  }
 
-    for(int i = 0; i < strlen(start); i++) {
-        if(start[i] == ' ') { // find the space after the file name
-            char* fname = malloc(i + 1);
-            strncpy(fname, start, i);
-            fname[i] = '\0'; // terminate the string
-            return fname; // return the file name
-        }
-    }
-
-    return NULL; // if no file name is found
+  return NULL; // if no file name is found
 }
 
 int main(int argc, char *argv[])
@@ -88,6 +115,13 @@ int main(int argc, char *argv[])
     printf("Server: received the following message\n%s", buffer);
 
     filename = parse_request(buffer);
+
+    if (filename == NULL) //should I exit here or continue waiting?
+    {
+      printf("Server: no file name found\n");
+      continue;
+    }
+
     printf("Server: parsed filename: %s\n", filename);
 
     close(new_fd);
