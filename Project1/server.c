@@ -41,7 +41,7 @@ char* replace_http_space(char* str) {
   return res;
 }
 
-char* parse_request(char *request) {
+char* get_filename(char *request) {
   char* start = strchr(request, '/') + 1; // find the first '/', and then skip the '/'
 
   for(int i = 0; i < strlen(start); i++) {
@@ -63,6 +63,7 @@ void send_response(int client_fd, char* filename) {
   char* headers = malloc(MESSAGE_SIZE);
   memset(headers, '\0', MESSAGE_SIZE);
   strcpy(headers, "HTTP/1.1 200 OK\r\n");
+  strcat(headers, "Connection: close\r\n");
 
   char* content_type;
 
@@ -86,16 +87,7 @@ void send_response(int client_fd, char* filename) {
   }
 
   strcat(headers, content_type);
-  strcat(headers, "Connection: close\r\n");
   strcat(headers, "\r\n");
-
-  int nbytes;
-  if((nbytes = send(client_fd, headers, strlen(headers), 0)) == -1) {
-    perror("send");
-    exit(-1);
-  }
-
-  free(headers);
 
   FILE* fd = fopen(filename, "r");
   if(fd == NULL) {
@@ -112,10 +104,15 @@ void send_response(int client_fd, char* filename) {
   char* buffer = malloc(file_size);
   memset(buffer, '\0', file_size);
 
-  // read the file into the buffer
+  // send the headers
+  int nbytes;
+  if((nbytes = send(client_fd, headers, strlen(headers), 0)) == -1) {
+    perror("send");
+    exit(-1);
+  }
+  
+  // read the file into the buffer and send it
   int bytes_read = fread(buffer, 1, file_size, fd);
-
-  // send the file
   if((nbytes = send(client_fd, buffer, bytes_read, 0)) == -1) {
     perror("send");
     exit(-1);
@@ -123,6 +120,7 @@ void send_response(int client_fd, char* filename) {
 
   fclose(fd);
   free(buffer);
+  free(headers);
 }
 
 int main(int argc, char *argv[])
@@ -182,7 +180,7 @@ int main(int argc, char *argv[])
     printf("Server: received %d bytes\n", nbytes); //debugging
     printf("Server: received the following message\n%s", buffer); //debugging
 
-    filename = parse_request(buffer);
+    filename = get_filename(buffer);
 
     if (filename == NULL) //should I exit here or continue waiting?
     {
