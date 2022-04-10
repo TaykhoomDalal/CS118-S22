@@ -92,7 +92,7 @@ void send_response(int client_fd, char* filename) {
   FILE* fd = fopen(filename, "r");
   if(fd == NULL) {
     perror("fopen");
-    exit(-1);
+    return;
   }
 
   // find the size of the file
@@ -108,19 +108,20 @@ void send_response(int client_fd, char* filename) {
   int nbytes;
   if((nbytes = send(client_fd, headers, strlen(headers), 0)) == -1) {
     perror("send");
-    exit(-1);
+    return;
   }
   
   // read the file into the buffer and send it
   int bytes_read = fread(buffer, 1, file_size, fd);
   if((nbytes = send(client_fd, buffer, bytes_read, 0)) == -1) {
     perror("send");
-    exit(-1);
+    return;
   }
 
   fclose(fd);
   free(buffer);
   free(headers);
+  return;
 }
 
 int main(int argc, char *argv[])
@@ -132,10 +133,9 @@ int main(int argc, char *argv[])
   char* filename;
 
   // Create a socket
-  if ((sockfd = socket(PF_INET, SOCK_STREAM, 0)) == -1) //AF_INET and PF_INET are the same
+  while((sockfd = socket(PF_INET, SOCK_STREAM, 0)) == -1) //AF_INET and PF_INET are the same
   {
     perror("socket");
-    exit(-1);
   }
 
   // Set up the address structure
@@ -146,17 +146,15 @@ int main(int argc, char *argv[])
 
   // Bind the socket to the address
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)); //reuse the port (prevents "Address already in use" error)
-  if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) 
+  while(bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) 
   {
     perror("bind");
-    exit(-1);
   }
 
   // Listen for connections
-  if (listen(sockfd, BACKLOG) == -1) 
+  while(listen(sockfd, BACKLOG) == -1) 
   {
     perror("listen");
-    exit(-1);
   }
 
   for(;;) 
@@ -167,28 +165,29 @@ int main(int argc, char *argv[])
       perror("accept");
       continue;
     }
-    printf("Server: got connection from %s\n", inet_ntoa(client_addr.sin_addr));
-    
+    // printf("Server: got connection from %s\n", inet_ntoa(client_addr.sin_addr));
+
     // read from the socket
     char buffer[MESSAGE_SIZE];
     int nbytes;
     if ((nbytes = recv(new_fd, buffer, MESSAGE_SIZE, 0)) == -1) { //recv is usually used to read from a socket whereas read is used to read from a file
       perror("recv");
-      exit(-1);
+      continue;
     }
     
-    printf("Server: received %d bytes\n", nbytes); //debugging
-    printf("Server: received the following message\n%s", buffer); //debugging
+    // printf("Server: received %d bytes\n", nbytes); //debugging
+    // printf("%s", buffer); //debugging
 
     filename = get_filename(buffer);
 
-    if (filename == NULL) //should I exit here or continue waiting?
+    if (filename == NULL)
     {
-      printf("Server: no file name found\n"); //debugging
+      close(new_fd);
+      free(filename);
       continue;
     }
 
-    printf("Server: parsed filename: %s\n", filename); //debugging
+    // printf("Server: parsed filename: %s\n", filename); //debugging
 
     send_response(new_fd, filename);
 
