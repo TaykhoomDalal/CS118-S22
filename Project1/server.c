@@ -7,7 +7,6 @@
 #include <sys/socket.h> // socket(), bind(), listen(), accept()
 #include <sys/wait.h> // waitpid()
 #include <netinet/in.h> // struct sockaddr_in, htons()
-#include <fcntl.h> // for open
 #include <unistd.h> // for close
 #include <arpa/inet.h> // for inet_ntoa
 #define MYPORT 15635 /* Avoid reserved ports */
