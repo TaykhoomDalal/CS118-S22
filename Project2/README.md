@@ -1,4 +1,4 @@
-# CS118 Project 1
+# CS118 Project 2
 
 This is the repo for spring 2022 cs118 project 2.
 
