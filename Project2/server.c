@@ -224,7 +224,7 @@ int main (int argc, char *argv[])
                     cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
                     
                     //print recv packet length
-                    fprintf(stderr, "%u\n", recvpkt.length);
+                    // fprintf(stderr, "%u\n", recvpkt.length);
 
                     buildPkt(&sendpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                     printSend(&sendpkt, 0);
