@@ -223,9 +223,8 @@ int main (int argc, char *argv[])
         if (bytesRead == 0) { // if we have reached the end of the file
             break;
         }
+        clientSeqNum = (clientSeqNum + prevLength) % MAX_SEQN;
         prevLength = bytesRead;
-        
-        clientSeqNum = (clientSeqNum + bytesRead) % MAX_SEQN;
 
         buildPkt(&pkts[i], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
         printSend(&pkts[i], 0);
@@ -239,7 +238,7 @@ int main (int argc, char *argv[])
         if (n > 0) {
             printRecv(&ackpkt);
 
-            if (ackpkt.ack) { // if we receive an ack from the server
+            if (ackpkt.ack && !ackpkt.dupack) { // if we receive an ack from the server and not duplicate ack
                 
                  
                 bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);
@@ -249,9 +248,8 @@ int main (int argc, char *argv[])
                 
                 if (bytesRead > 0) { // if there is more data to be sent
 
+                    clientSeqNum = (clientSeqNum + prevLength) % MAX_SEQN;
                     prevLength = bytesRead;
-                    // fprintf(stderr, "bytesRead: %zu\n", bytesRead);
-                    clientSeqNum = (clientSeqNum + bytesRead) % MAX_SEQN;
                     e %= WND_SIZE; // reset e to 0 if it is greater than WND_SIZE (circular buffer)
 
                     buildPkt(&pkts[e], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
@@ -273,7 +271,6 @@ int main (int argc, char *argv[])
                 // fprintf(stderr, "bytesRead: %zu\n", bytesRead);
             }
         }
-        
         // else if (isTimeout(timer)) {
         //     printTimeout(&pkts);
         //     printSend(&synpkt, 1);
