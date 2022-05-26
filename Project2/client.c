@@ -183,7 +183,7 @@ int main (int argc, char *argv[])
 
     struct packet ackpkt;
     struct packet pkts[WND_SIZE];
-    int s = 0;
+    int s = 0; 
     int e = 0;
     int full = 0;
 
@@ -196,9 +196,9 @@ int main (int argc, char *argv[])
     printSend(&pkts[0], 0);
     sendto(sockfd, &pkts[0], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
     timer = setTimer();
-    buildPkt(&pkts[0], seqNum, (synackpkt.seqnum + 1) % MAX_SEQN, 0, 0, 0, 1, m, buf);
+    buildPkt(&pkts[0], seqNum, (synackpkt.seqnum + 1) % MAX_SEQN, 0, 0, 0, 1, m, buf); //dupack set to 1
 
-    e = 1;
+    e = 1; 
 
     // =====================================
     // *** TODO: Implement the rest of reliable transfer in the client ***
@@ -208,12 +208,81 @@ int main (int argc, char *argv[])
     //       single data packet, and then tears down the connection without
     //       handling data loss.
     //       Only for demo purpose. DO NOT USE IT in your final submission
+    
+    // Constants
+    const unsigned short clientAck = 0; //client ack number should always be 0 after connection established
+    
+    size_t bytesRead = 0;
+    unsigned short clientSeqNum = seqNum;
+    unsigned short prevLength = m;
+
+    // send first 10 packets (we have already sent the first one)
+    for(int i = 1; i < WND_SIZE; i++) {
+        bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);
+
+        if (bytesRead == 0) { // if we have reached the end of the file
+            break;
+        }
+        prevLength = bytesRead;
+        
+        clientSeqNum = (clientSeqNum + bytesRead) % MAX_SEQN;
+
+        buildPkt(&pkts[i], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
+        printSend(&pkts[i], 0);
+        fprintf(stderr, "bytesRead: %u\n", pkts[i].length);
+        sendto(sockfd, &pkts[i], bytesRead + 12, 0, (struct sockaddr*) &servaddr, servaddrlen); //need to do bytesRead + 12 because the packet size is 12 bytes smaller than the payload size
+        e++;
+    }
+
     while (1) {
         n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &servaddr, (socklen_t *) &servaddrlen);
         if (n > 0) {
-            break;
+            printRecv(&ackpkt);
+
+            if (ackpkt.ack) { // if we receive an ack from the server
+                
+                 
+                bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);
+                
+                // debugging
+                // fprintf(stderr, "bytesRead: %zu\n", bytesRead);
+                
+                if (bytesRead > 0) { // if there is more data to be sent
+
+                    prevLength = bytesRead;
+                    // fprintf(stderr, "bytesRead: %zu\n", bytesRead);
+                    clientSeqNum = (clientSeqNum + bytesRead) % MAX_SEQN;
+                    e %= WND_SIZE; // reset e to 0 if it is greater than WND_SIZE (circular buffer)
+
+                    buildPkt(&pkts[e], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
+                    printSend(&pkts[e], 0);
+                    sendto(sockfd, &pkts[e], bytesRead + 12, 0, (struct sockaddr*) &servaddr, servaddrlen);
+                    
+                    // if(e == 0 && ackpkt.dupack == 0){ // for GBN you need to set the timer for the first packet in the window
+                    //     timer = setTimer();
+                    // }
+                    
+                    e++;
+                }
+                else if (ackpkt.acknum == clientSeqNum + prevLength && bytesRead <= 0) { //we have reached the end of the file && the acknumber for last packet matches with the seqnumber of the last packet
+                    break;
+                }
+                // fprintf(stderr, "ackpkt.acknum: %hu\n", ackpkt.acknum);
+                // fprintf(stderr, "clientSeqNum: %hu\n", clientSeqNum);
+                // fprintf(stderr, "prevLength: %hu\n", prevLength);
+                // fprintf(stderr, "bytesRead: %zu\n", bytesRead);
+            }
         }
+        
+        // else if (isTimeout(timer)) {
+        //     printTimeout(&pkts);
+        //     printSend(&synpkt, 1);
+        //     sendto(sockfd, &synpkt, PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
+        //     timer = setTimer();
+        // }
     }
+    //print ackpkt acknnum
+    // fprintf(stderr, "acknum: %d\n", ackpkt.acknum);
 
     // *** End of your client implementation ***
     fclose(fp);

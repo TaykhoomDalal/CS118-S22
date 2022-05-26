@@ -193,23 +193,52 @@ int main (int argc, char *argv[])
         //       without handling data loss.
         //       Only for demo purpose. DO NOT USE IT in your final submission
         struct packet recvpkt;
+        struct packet sendpkt;
+
+        // save file name for current connection
+        int length = snprintf(NULL, 0, "%d", i) + 6;
+        char* filename = malloc(length);
+        snprintf(filename, length, "%d.file", i);
+
+        seqNum = ackpkt.seqnum; // the sequence number from server side should always stay the same (is the same as the last ack sequence number)
 
         while(1) {
             n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
             if (n > 0) {
                 printRecv(&recvpkt);
-
+                // fprintf(stderr, "%u\n", recvpkt.length);
+                // int i = (cliSeqNum + recvpkt.length)%MAX_SEQN;
+                // fprintf(stderr, "i: %d\n", i);
                 if (recvpkt.fin) {
                     cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
 
-                    buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
-                    printSend(&ackpkt, 0);
-                    sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+                    buildPkt(&sendpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                    printSend(&sendpkt, 0);
+                    sendto(sockfd, &sendpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
 
                     break;
                 }
+                else if(recvpkt.seqnum == cliSeqNum || (recvpkt.seqnum > cliSeqNum - PKT_SIZE && recvpkt.seqnum < cliSeqNum)) { //check if the sequence number is the same as from the last ack
+
+                    fwrite(recvpkt.payload, 1, recvpkt.length, fp);
+                    cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
+                    
+                    //print recv packet length
+                    fprintf(stderr, "%u\n", recvpkt.length);
+
+                    buildPkt(&sendpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                    printSend(&sendpkt, 0);
+                    sendto(sockfd, &sendpkt, recvpkt.length + 12, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+                }
+                // else{ //if the sequence number is not the same as from the last correct ack, resend the ack for the last correct ack
+                //     buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
+                //     printSend(&ackpkt, 0);
+                //     sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+                // }
             }
         }
+        
+        free(filename);
 
         // *** End of your server implementation ***
 
