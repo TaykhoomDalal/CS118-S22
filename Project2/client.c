@@ -215,9 +215,9 @@ int main (int argc, char *argv[])
     size_t bytesRead = 0;
     unsigned short clientSeqNum = seqNum;
     unsigned short prevLength = m;
-    int lastUnAcked = 0; //oldest unacked packet index
 
-    // send first 10 packets (we have already sent the first one so we start at i = 1)
+
+    // send first 10 packets (we have already sent the first one)
     for(int i = 1; i < WND_SIZE; i++) {
         bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);
 
@@ -230,62 +230,68 @@ int main (int argc, char *argv[])
         buildPkt(&pkts[i], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
         printSend(&pkts[i], 0);
 
-        sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen); 
+        sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen); //need to do bytesRead + 12 because the packet size is 12 bytes smaller than the payload size
         e = (e+1) % WND_SIZE;
     }
 
     while (1) {
         n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &servaddr, (socklen_t *) &servaddrlen);
-        if (n > 0) { // if we received a packet
+        if (n > 0) {
             printRecv(&ackpkt);
 
-            if(ackpkt.ack || ackpkt.dupack) //use the ack to update lastUnAcked packet #
-            {
-                // the idea with this if statement is that if the acknumber is the sequence number for the packet AFTER the last unacked packet, or if it is 1 or 2 packets ahead
-                // then we need to update the index of the last unacked packet (if the acknumber is a few packets ahead, note that the client should assume the server has already
-                // received any packets that were sent before the acknumber, and even if they were lost, it doesn't matter, we know the server got them based on the acknumber - see packet loss scenario 3 from the spec)
-                if(ackpkt.acknum >= (pkts[lastUnAcked].seqnum + pkts[lastUnAcked].length) % MAX_SEQN) {
-                    
-                    for(int i = lastUnAcked; i < WND_SIZE + lastUnAcked; i++) {
+            if (ackpkt.ack) { // if we receive an ack from the server or if we dropped an ack, got a dup ack, and we don't have any more new packets in our window
+
+                int oldS = s;
+                if(ackpkt.acknum == (pkts[s].seqnum + pkts[s].length) % MAX_SEQN) { 
+                    s = (s + 1) % WND_SIZE;
+                }
+                else
+                {
+                    for(int i = s; i < WND_SIZE + s; i++) {
                         int index = i % WND_SIZE;
                         if(pkts[index].seqnum + pkts[index].length == ackpkt.acknum) {
-                            lastUnAcked = (index + 1) % WND_SIZE; //move the lastUnAcked index to the next packet
+                            
+                            s = (index + 1) % WND_SIZE;
+                            
                             break;
                         }
                     }
                 }
-            }
 
-
-            if (ackpkt.ack || (ackpkt.dupack && e == lastUnAcked)) { // if we receive an ack from the server or if we dropped an ack, got a dup ack, and we don't have any more new packets in our window
-
-                bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);                
-                
-                if (bytesRead > 0) { // if there is more data to be sent
-
-                    clientSeqNum = (clientSeqNum + prevLength) % MAX_SEQN;
-                    prevLength = bytesRead;
-
-                    buildPkt(&pkts[e], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
-                    printSend(&pkts[e], 0);
-                    sendto(sockfd, &pkts[e], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
+                int loop = (s + WND_SIZE - oldS) % WND_SIZE;
+                int end = 0;
+                for(int i = 0; i < loop; i++) {
+                    bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);
                     
-                    timer = setTimer(); // After the sender receives a new ACK (not duplicate), the timer is restarted if there is any unacknowledged packet
-                    
-                    e = (e+1) % WND_SIZE;
+                    if (bytesRead > 0) { // if there is more data to be sent
+
+                        clientSeqNum = (clientSeqNum + prevLength) % MAX_SEQN;
+                        prevLength = bytesRead;
+
+                        buildPkt(&pkts[e], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
+                        printSend(&pkts[e], 0);
+                        sendto(sockfd, &pkts[e], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
+                        
+                        timer = setTimer(); // After the sender receives a new ACK (not duplicate), the timer is restarted if there is any unacknowledged packet
+                        e = (e+1) % WND_SIZE;
+                    }
+                    if (ackpkt.acknum == clientSeqNum + prevLength && bytesRead <= 0) { //we have reached the end of the file && the acknumber for last packet matches with the seqnumber of the last packet
+                        end = 1;
+                        break;
+                    }
                 }
-                else if (ackpkt.acknum == clientSeqNum + prevLength && bytesRead <= 0) { //we have reached the end of the file && the acknumber for last packet matches with the seqnumber of the last packet
+                if(end)
+                {
                     break;
                 }
             }
         }
         if (isTimeout(timer)) {
+            printTimeout(&pkts[s]);
 
-            printTimeout(&pkts[lastUnAcked]);
-
-            if (e == lastUnAcked) // if our index into the buffer wraps around to the same spot as lastUnacked, we need to deal with this specially
+            if (e == s) // if our index into the buffer wraps around to the same spot as s, we need to deal with this specially
             {
-                for(int i = lastUnAcked; i < e + WND_SIZE; i++)
+                for(int i = s; i < e + WND_SIZE; i++)
                 {
                     printSend(&pkts[i % WND_SIZE], 1);
                     sendto(sockfd, &pkts[i % WND_SIZE], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
@@ -293,13 +299,13 @@ int main (int argc, char *argv[])
             }
             else 
             {
-                for(int i = lastUnAcked; (i % WND_SIZE) != e ; i = (i+1) % WND_SIZE) //starting at lastUnAcked, send each packet in the window, until we wrap around to the same spot as e, which is where we start sending from
+
+                for(int i = s; i != e ; i = (i+1) % WND_SIZE)
                 {
                     printSend(&pkts[i], 1);
                     sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
                 }
             }
-
             timer = setTimer();
         }
     }

@@ -206,8 +206,10 @@ int main (int argc, char *argv[])
             n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
             if (n > 0) {
                 printRecv(&recvpkt);
-
-                if (recvpkt.fin) { //if we get fin, then we end connection
+                // fprintf(stderr, "%u\n", recvpkt.length);
+                // int i = (cliSeqNum + recvpkt.length)%MAX_SEQN;
+                // fprintf(stderr, "i: %d\n", i);
+                if (recvpkt.fin) {
                     cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
 
                     buildPkt(&sendpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
@@ -220,6 +222,9 @@ int main (int argc, char *argv[])
 
                     fwrite(recvpkt.payload, 1, recvpkt.length, fp);
                     cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
+                    
+                    //print recv packet length
+                    // fprintf(stderr, "%u\n", recvpkt.length);
 
                     buildPkt(&sendpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                     printSend(&sendpkt, 0);
