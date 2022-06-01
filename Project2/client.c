@@ -249,7 +249,7 @@ int main (int argc, char *argv[])
                 {
                     for(int i = s; i < WND_SIZE + s; i++) {
                         int index = i % WND_SIZE;
-                        if(pkts[index].seqnum + pkts[index].length == ackpkt.acknum) {
+                        if((pkts[index].seqnum + pkts[index].length) % MAX_SEQN == ackpkt.acknum) {
                             
                             s = (index + 1) % WND_SIZE;
                             
@@ -272,7 +272,9 @@ int main (int argc, char *argv[])
                         printSend(&pkts[e], 0);
                         sendto(sockfd, &pkts[e], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
                         
-                        timer = setTimer(); // After the sender receives a new ACK (not duplicate), the timer is restarted if there is any unacknowledged packet
+                        if(i == 0) {
+                            timer = setTimer(); // After the sender receives a new ACK (not duplicate), the timer is restarted if there is any unacknowledged packet
+                        }
                         e = (e+1) % WND_SIZE;
                     }
                     if (ackpkt.acknum == clientSeqNum + prevLength && bytesRead <= 0) { //we have reached the end of the file && the acknumber for last packet matches with the seqnumber of the last packet
@@ -283,6 +285,10 @@ int main (int argc, char *argv[])
                 if(end)
                 {
                     break;
+                }
+                if (ackpkt.acknum == clientSeqNum + prevLength && bytesRead <= 0) { //we have reached the end of the file && the acknumber for last packet matches with the seqnumber of the last packet
+                        end = 1;
+                        break;
                 }
             }
         }
