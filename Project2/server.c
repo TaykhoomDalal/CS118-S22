@@ -193,7 +193,7 @@ int main (int argc, char *argv[])
         //       without handling data loss.
         //       Only for demo purpose. DO NOT USE IT in your final submission
         struct packet recvpkt;
-        struct packet sendpkt;
+        struct packet sendpkt = synackpkt;
 
         // save file name for current connection
         int length = snprintf(NULL, 0, "%d", i) + 6;
@@ -206,10 +206,8 @@ int main (int argc, char *argv[])
             n = recvfrom(sockfd, &recvpkt, PKT_SIZE, 0, (struct sockaddr *) &cliaddr, (socklen_t *) &cliaddrlen);
             if (n > 0) {
                 printRecv(&recvpkt);
-                // fprintf(stderr, "%u\n", recvpkt.length);
-                // int i = (cliSeqNum + recvpkt.length)%MAX_SEQN;
-                // fprintf(stderr, "i: %d\n", i);
-                if (recvpkt.fin) {
+
+                if (recvpkt.fin) { //if we get fin, then we end connection
                     cliSeqNum = (cliSeqNum + 1) % MAX_SEQN;
 
                     buildPkt(&sendpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
@@ -218,23 +216,20 @@ int main (int argc, char *argv[])
 
                     break;
                 }
-                else if(recvpkt.seqnum == cliSeqNum || (recvpkt.seqnum > cliSeqNum - PKT_SIZE && recvpkt.seqnum < cliSeqNum)) { //check if the sequence number is the same as from the last ack
+                else if(recvpkt.seqnum == cliSeqNum) { //check if the sequence number is the same as from the last ack
 
                     fwrite(recvpkt.payload, 1, recvpkt.length, fp);
                     cliSeqNum = (recvpkt.seqnum + recvpkt.length) % MAX_SEQN;
-                    
-                    //print recv packet length
-                    // fprintf(stderr, "%u\n", recvpkt.length);
 
                     buildPkt(&sendpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
                     printSend(&sendpkt, 0);
-                    sendto(sockfd, &sendpkt, recvpkt.length + 12, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+                    sendto(sockfd, &sendpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
                 }
-                // else{ //if the sequence number is not the same as from the last correct ack, resend the ack for the last correct ack
-                //     buildPkt(&ackpkt, seqNum, cliSeqNum, 0, 0, 1, 0, 0, NULL);
-                //     printSend(&ackpkt, 0);
-                //     sendto(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
-                // }
+                else{ //if the sequence number is not the same as from the last correct ack, send dup ack for the last correct ack                 
+                    buildPkt(&sendpkt, seqNum, cliSeqNum, 0, 0, 0, 1, 0, NULL);
+                    printSend(&sendpkt, 0);
+                    sendto(sockfd, &sendpkt, PKT_SIZE, 0, (struct sockaddr*) &cliaddr, cliaddrlen);
+                }
             }
         }
         

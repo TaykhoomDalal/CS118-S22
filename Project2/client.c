@@ -215,8 +215,9 @@ int main (int argc, char *argv[])
     size_t bytesRead = 0;
     unsigned short clientSeqNum = seqNum;
     unsigned short prevLength = m;
+    int lastUnAcked = 0; //oldest unacked packet index
 
-    // send first 10 packets (we have already sent the first one)
+    // send first 10 packets (we have already sent the first one so we start at i = 1)
     for(int i = 1; i < WND_SIZE; i++) {
         bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);
 
@@ -228,58 +229,80 @@ int main (int argc, char *argv[])
 
         buildPkt(&pkts[i], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
         printSend(&pkts[i], 0);
-        fprintf(stderr, "bytesRead: %u\n", pkts[i].length);
-        sendto(sockfd, &pkts[i], bytesRead + 12, 0, (struct sockaddr*) &servaddr, servaddrlen); //need to do bytesRead + 12 because the packet size is 12 bytes smaller than the payload size
-        e++;
+
+        sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen); 
+        e = (e+1) % WND_SIZE;
     }
 
     while (1) {
         n = recvfrom(sockfd, &ackpkt, PKT_SIZE, 0, (struct sockaddr *) &servaddr, (socklen_t *) &servaddrlen);
-        if (n > 0) {
+        if (n > 0) { // if we received a packet
             printRecv(&ackpkt);
 
-            if (ackpkt.ack && !ackpkt.dupack) { // if we receive an ack from the server and not duplicate ack
-                
-                 
-                bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);
-                
-                // debugging
-                // fprintf(stderr, "bytesRead: %zu\n", bytesRead);
+            if(ackpkt.ack || ackpkt.dupack) //use the ack to update lastUnAcked packet #
+            {
+                // the idea with this if statement is that if the acknumber is the sequence number for the packet AFTER the last unacked packet, or if it is 1 or 2 packets ahead
+                // then we need to update the index of the last unacked packet (if the acknumber is a few packets ahead, note that the client should assume the server has already
+                // received any packets that were sent before the acknumber, and even if they were lost, it doesn't matter, we know the server got them based on the acknumber - see packet loss scenario 3 from the spec)
+                if(ackpkt.acknum >= (pkts[lastUnAcked].seqnum + pkts[lastUnAcked].length) % MAX_SEQN) {
+                    
+                    for(int i = lastUnAcked; i < WND_SIZE + lastUnAcked; i++) {
+                        int index = i % WND_SIZE;
+                        if(pkts[index].seqnum + pkts[index].length == ackpkt.acknum) {
+                            lastUnAcked = (index + 1) % WND_SIZE; //move the lastUnAcked index to the next packet
+                            break;
+                        }
+                    }
+                }
+            }
+
+
+            if (ackpkt.ack || (ackpkt.dupack && e == lastUnAcked)) { // if we receive an ack from the server or if we dropped an ack, got a dup ack, and we don't have any more new packets in our window
+
+                bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);                
                 
                 if (bytesRead > 0) { // if there is more data to be sent
 
                     clientSeqNum = (clientSeqNum + prevLength) % MAX_SEQN;
                     prevLength = bytesRead;
-                    e %= WND_SIZE; // reset e to 0 if it is greater than WND_SIZE (circular buffer)
 
                     buildPkt(&pkts[e], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
                     printSend(&pkts[e], 0);
-                    sendto(sockfd, &pkts[e], bytesRead + 12, 0, (struct sockaddr*) &servaddr, servaddrlen);
+                    sendto(sockfd, &pkts[e], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
                     
-                    // if(e == 0 && ackpkt.dupack == 0){ // for GBN you need to set the timer for the first packet in the window
-                    //     timer = setTimer();
-                    // }
+                    timer = setTimer(); // After the sender receives a new ACK (not duplicate), the timer is restarted if there is any unacknowledged packet
                     
-                    e++;
+                    e = (e+1) % WND_SIZE;
                 }
                 else if (ackpkt.acknum == clientSeqNum + prevLength && bytesRead <= 0) { //we have reached the end of the file && the acknumber for last packet matches with the seqnumber of the last packet
                     break;
                 }
-                // fprintf(stderr, "ackpkt.acknum: %hu\n", ackpkt.acknum);
-                // fprintf(stderr, "clientSeqNum: %hu\n", clientSeqNum);
-                // fprintf(stderr, "prevLength: %hu\n", prevLength);
-                // fprintf(stderr, "bytesRead: %zu\n", bytesRead);
             }
         }
-        // else if (isTimeout(timer)) {
-        //     printTimeout(&pkts);
-        //     printSend(&synpkt, 1);
-        //     sendto(sockfd, &synpkt, PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
-        //     timer = setTimer();
-        // }
+        if (isTimeout(timer)) {
+
+            printTimeout(&pkts[lastUnAcked]);
+
+            if (e == lastUnAcked) // if our index into the buffer wraps around to the same spot as lastUnacked, we need to deal with this specially
+            {
+                for(int i = lastUnAcked; i < e + WND_SIZE; i++)
+                {
+                    printSend(&pkts[i % WND_SIZE], 1);
+                    sendto(sockfd, &pkts[i % WND_SIZE], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
+                }
+            }
+            else 
+            {
+                for(int i = lastUnAcked; (i % WND_SIZE) != e ; i = (i+1) % WND_SIZE) //starting at lastUnAcked, send each packet in the window, until we wrap around to the same spot as e, which is where we start sending from
+                {
+                    printSend(&pkts[i], 1);
+                    sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
+                }
+            }
+
+            timer = setTimer();
+        }
     }
-    //print ackpkt acknnum
-    // fprintf(stderr, "acknum: %d\n", ackpkt.acknum);
 
     // *** End of your client implementation ***
     fclose(fp);
