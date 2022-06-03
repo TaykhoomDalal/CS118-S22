@@ -230,7 +230,7 @@ int main (int argc, char *argv[])
         buildPkt(&pkts[i], clientSeqNum, clientAck, 0, 0, 0, 0, bytesRead, buf);
         printSend(&pkts[i], 0);
 
-        sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen); //need to do bytesRead + 12 because the packet size is 12 bytes smaller than the payload size
+        sendto(sockfd, &pkts[i], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
         e = (e+1) % WND_SIZE;
     }
 
@@ -249,17 +249,15 @@ int main (int argc, char *argv[])
                 {
                     for(int i = s; i < WND_SIZE + s; i++) {
                         int index = i % WND_SIZE;
+
                         if((pkts[index].seqnum + pkts[index].length) % MAX_SEQN == ackpkt.acknum) {
-                            
                             s = (index + 1) % WND_SIZE;
-                            
                             break;
                         }
                     }
                 }
 
                 int loop = (s + WND_SIZE - oldS) % WND_SIZE;
-                int end = 0;
                 for(int i = 0; i < loop; i++) {
                     bytesRead = fread(buf, 1, PAYLOAD_SIZE, fp);
                     
@@ -278,16 +276,10 @@ int main (int argc, char *argv[])
                         e = (e+1) % WND_SIZE;
                     }
                     if (ackpkt.acknum == clientSeqNum + prevLength && bytesRead <= 0) { //we have reached the end of the file && the acknumber for last packet matches with the seqnumber of the last packet
-                        end = 1;
                         break;
                     }
                 }
-                if(end)
-                {
-                    break;
-                }
                 if (ackpkt.acknum == clientSeqNum + prevLength && bytesRead <= 0) { //we have reached the end of the file && the acknumber for last packet matches with the seqnumber of the last packet
-                        end = 1;
                         break;
                 }
             }
