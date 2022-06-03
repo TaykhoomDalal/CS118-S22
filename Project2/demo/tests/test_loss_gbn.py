@@ -74,7 +74,7 @@ def check_timeout(all_lines) -> bool:
                 # return False
             elif result['event'] == 'RESEND' and int(result['seq']) == (timeout_seq + step * resend_counter) % 25601:
                 resend_counter += 1
-                if resend_counter is 10:
+                if resend_counter == 10:
                     is_timeout = False
                     resend_counter = 0
             elif result['event'] == 'SEND':
