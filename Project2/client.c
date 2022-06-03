@@ -196,8 +196,6 @@ int main (int argc, char *argv[])
     printSend(&pkts[0], 0);
     sendto(sockfd, &pkts[0], PKT_SIZE, 0, (struct sockaddr*) &servaddr, servaddrlen);
     timer = setTimer();
-    buildPkt(&pkts[0], seqNum, (synackpkt.seqnum + 1) % MAX_SEQN, 0, 0, 0, 1, m, buf); //dupack set to 1
-
     e = 1; 
 
     // =====================================
